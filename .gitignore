@@ -2,3 +2,5 @@
 .env
 server/data
 web/dist
+
+.launcher/
