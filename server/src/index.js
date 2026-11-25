@@ -19,6 +19,7 @@ import { PostgresStore, isPostgresEnabled } from './postgresStore.js';
 import { readJsonStrict, atomicJsonWrite, createDurableState } from './storage.js';
 import { createAdminAuth, fileAuthStorage } from './adminAuth.js';
 import {sourceRefs,sanitizeCitationMarkers} from './sources.js';
+import {assessRequest,filterEvidence,evidenceMatches} from './intentGuard.js';
 import {kyivDay,validDay,dayBounds} from '../../shared/time.mjs';
 import {RESPONSE_TYPES,isNoContext,isFallback,validSessionId} from '../../shared/responseTypes.mjs';
 import {createAiGuard} from './aiGuard.js';
@@ -795,11 +796,11 @@ async function refreshKnowledgeIfChanged(){
 }
 let cachedFileRevision=null;
 
-async function replyLocally(res, question, answer, lang, sourceType,sessionId=null) {
+async function replyLocally(res, question, answer, lang, sourceType,sessionId=null,details={}) {
   const responseId = randomUUID();
   await updateFaq(draft => {
 draft.chats.push({ id: responseId, question, answer, sources: '[]', created_at: new Date().toISOString(),
-    meta: { sourceType, lang,sessionId, contextsCount: 0, hadContext: false, fallback: sourceType === 'no_context',fallbackReason:sourceType==='no_context'?'no_evidence':null, latencyMs: 0 } });
+    meta: { sourceType, lang,sessionId, contextsCount: 0, hadContext: false, fallback: sourceType === 'no_context',fallbackReason:sourceType==='no_context'?'no_evidence':null, latencyMs: 0,...details } });
 
 });
   return res.json({ responseId, answer, sources: [], sourceType });
@@ -1081,7 +1082,7 @@ app.get('/api/admin/analytics', async (req, res) => {
 
   const problemMap = countBy(
     chats
-      .filter((c) => c?.meta?.sourceType === 'error' || c?.meta?.fallback || c?.meta?.hadContext === false)
+      .filter((c) => !c?.meta?.policyDecision && (c?.meta?.sourceType === 'error' || c?.meta?.fallback || c?.meta?.hadContext === false))
       .map((c) => c.question)
   );
   const topProblematic = Array.from(problemMap.entries())
@@ -1564,15 +1565,23 @@ app.post('/api/chat', async (req, res) => {
     const { message } = req.body || {};
     const lang = normalizeLang(req.body?.lang);
     if (typeof message !== 'string' || !message.trim() || message.length > 4000) return res.status(400).json({ error: 'Запитання має містити від 1 до 4000 символів.' });
-    await refreshKnowledgeIfChanged();
     const history = cleanHistory(req.body?.history);
+    const intent=assessRequest(message,history,lang);
+    if(intent.answer)return await replyLocally(res,message,intent.answer,lang,intent.sourceType,sessionId,{
+      policyDecision:intent.kind,policyReason:intent.reason,intentTopics:intent.profile.topics,intentSenses:intent.profile.senses,
+      latencyMs:Math.max(0,Date.now()-requestStart),
+    });
+    const friendly = conversationalReply(message, lang);
+    if (friendly) return await replyLocally(res, message, friendly, lang, 'conversation',sessionId);
+    await refreshKnowledgeIfChanged();
     const dialogue = resolveDialogue(message, history, lang);
-    const expandedQuestion = dialogue.searchQuestion;
+    const expandedQuestion = intent.contextUsed&&intent.profile.senses.length?intent.searchQuestion:dialogue.searchQuestion;
+    const retrieve=(query,limit=6)=>filterEvidence(searchDocs(query,Math.max(limit*3,12)),intent,query).slice(0,limit);
     // Test-only forced AI branch: no FAQ/local fallback masquerades as a model response.
     // Enabled strictly in a loopback-bound isolated child process.
     if (process.env.OA_TEST_SANDBOX === '1' && req.body?.testMode === 'ai') {
       try {
-        const contexts = searchDocs(expandedQuestion, 6);
+        const contexts = retrieve(expandedQuestion, 6);
         const messages = buildChatMessages(contexts, dialogue.followUp ? expandedQuestion : message, lang, history);
         const generated = await generateWithFallback(messages);
         if (!generated?.answer || !generated?.provider || generated.provider === 'local') {
@@ -1584,10 +1593,8 @@ app.post('/api/chat', async (req, res) => {
         return res.status(503).json({ error: humanizeModelError(error.message || error) });
       }
     }
-    const friendly = conversationalReply(message, lang);
-    if (friendly) return await replyLocally(res, message, friendly, lang, 'conversation',sessionId);
     const followup = clarification(expandedQuestion, lang);
-    if (followup) return await replyLocally(res, message, followup, lang, 'clarification',sessionId);
+    if (followup&&!intent.profile.senses.length) return await replyLocally(res, message, followup, lang, 'clarification',sessionId);
 
     if (isScheduleIntent(expandedQuestion)) {
       mockSchedule = loadMockSchedule();
@@ -1616,7 +1623,8 @@ draft.chats.push({
       }
     }
 
-    const adminQa = searchAdminQaLocal(dialogue.historyUsed ? expandedQuestion : message, lang);
+    const candidateQa = searchAdminQaLocal(dialogue.historyUsed||intent.contextUsed ? expandedQuestion : message, lang);
+    const adminQa = candidateQa&&evidenceMatches({chunk:candidateQa.question+' '+candidateQa.answer},intent,expandedQuestion)?candidateQa:null;
     if (adminQa) {
       const responseId = randomUUID();
       await updateFaq(draft => {
@@ -1647,7 +1655,7 @@ draft.chats.push({
     // Невідома ціна/рік не повинні зупиняти відповіді на інші питання.
     const needs = planInformationNeeds(expandedQuestion, lang);
     if (needs.length >= 2) {
-      const composite = answerInformationNeeds(needs, expandedQuestion, (q) => searchDocs(q, 6), lang);
+      const composite = answerInformationNeeds(needs, expandedQuestion, (q) => retrieve(q, 6), lang);
       const responseId = randomUUID();
       await updateFaq(draft => {
 draft.chats.push({
@@ -1664,8 +1672,8 @@ draft.chats.push({
         sourceType: 'multi_extract', coveredNeeds: composite.answered, missingNeeds: composite.unanswered });
     }
 
-    const contexts = searchDocs(expandedQuestion, 6);
-    const verifiedOffline = answerGroundedOffline(expandedQuestion,lang,[...docsById.values()]);
+    const contexts = retrieve(expandedQuestion, 6);
+    const verifiedOffline = answerGroundedOffline(expandedQuestion,lang,filterEvidence([...docsById.values()],intent,expandedQuestion));
     if (process.env.OA_TEST_SANDBOX === '1' && req.body?.testMode === 'offline' && verifiedOffline) {
       const result=verifiedOffline;
       const responseId=randomUUID();

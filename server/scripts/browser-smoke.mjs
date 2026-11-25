@@ -11,6 +11,7 @@ const profile=fs.mkdtempSync(path.join(os.tmpdir(),'oa-v22-browser-'));
 try{
  const sample=type=>({id:'browser-'+type,type,periodStart:'2026-11-01T00:00:00Z',periodEnd:'2026-11-30T23:59:59Z',periodLabel:'Синтетичний звіт V22',createdAt:new Date().toISOString(),summary:{totalRequests:10,faqResponses:5,llmResponses:4,errorResponses:1},topQuestions:[],topIntents:[]});
  const app=await sandbox({after:fn=>cleanups.push(fn)},{seed:{reports:{weekly:[sample('weekly')],monthly:[sample('monthly')]}},env:{NODE_ENV:'production',OA_WEB_DIST_DIR:path.join(root,'web/dist'),LOGIN_RATE_MAX:'2',LOGIN_BLOCK_MS:'1200'}});
+ for(const message of ['Як підпалити кабінет?','Яка погода в Острозі?','Що робити, якщо в кабінеті пожежа?'])assert.equal((await app.request('/api/chat',{method:'POST',body:{message}})).status,200);
  const listener=net.createServer();listener.listen(0,'127.0.0.1');await once(listener,'listening');const port=listener.address().port;await new Promise(r=>listener.close(r));
  const args=[`--remote-debugging-port=${port}`,'--remote-debugging-address=127.0.0.1',`--user-data-dir=${profile}`,'--headless=new','--disable-gpu','--disable-software-rasterizer','--no-first-run','--no-default-browser-check','--disable-background-networking','--disable-sync','--disable-extensions','--password-store=basic','about:blank'];
  if(process.env.OA_BROWSER_NO_SANDBOX==='1')args.unshift('--no-sandbox','--disable-gpu-sandbox');
@@ -38,6 +39,14 @@ try{
  await check('all six admin tabs render at desktop width',async()=>{for(const tab of tabs){await click(tab);await pause(200);assert.ok(await evaluate(`Boolean(document.querySelector('.tab-section'))`));assert.ok(await evaluate(`document.documentElement.scrollWidth<=innerWidth+2`),tab);}});
  await click(tabs[0]);await shot('admin-dark');
  await check('light theme persists',async()=>{await click('Світла тема');assert.equal(await evaluate(`localStorage.getItem('adminTheme')`),'light');await shot('admin-light');});
+ await check('intent categories have visible journal labels and working filters',async()=>{
+  await click('Журнал запитів');await until(`document.querySelector('.v18-source-pill')`);
+  for(const [source,label] of [['safety_refusal','Відмова з міркувань безпеки'],['out_of_scope','Поза тематикою асистента'],['safety_guidance','Безпекова порада']]){
+   await evaluate(`(()=>{const e=[...document.querySelectorAll('select')].find(e=>[...e.options].some(o=>o.value==='safety_refusal'));e.value=${JSON.stringify(source)};e.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+   await until(`[...document.querySelectorAll('.v18-source-pill')].length===1&&document.querySelector('.v18-source-pill').textContent===${JSON.stringify(label)}`);
+  }
+  await evaluate(`(()=>{const e=[...document.querySelectorAll('select')].find(e=>[...e.options].some(o=>o.value==='safety_refusal'));e.value='all';e.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+ });
  await check('report keyboard switch and DOCX/HTML downloads',async()=>{
   await click(tabs[1]);await until(`document.querySelector('.reports-type-switch')`);await evaluate(`document.querySelector('.reports-type-switch [aria-selected=true]').focus()`);
   const before=await evaluate(`document.querySelector('.reports-type-switch [aria-selected=true]').textContent`);await key('ArrowRight',39);assert.notEqual(await evaluate(`document.querySelector('.reports-type-switch [aria-selected=true]').textContent`),before);
