@@ -1,0 +1,42 @@
+# Dependencies and build output
+**/node_modules/
+web/dist/
+server/dist/
+
+# Secrets and private local configuration
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+
+# Runtime state, user chats, knowledge caches, and research reports
+server/data/
+reports/
+.launcher/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Local backups, exported archives and installers
+backup_before_*/
+**/backup_before_*/
+*.zip
+*.7z
+*.rar
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local runtime, audit evidence and code-only checkpoints
+.tools/
+.audit_*/
+.update_backups/
+.oa_*_last_backup.txt

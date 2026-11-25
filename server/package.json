@@ -1,0 +1,28 @@
+{
+  "name": "oa-chatbot-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node ../scripts/run-node.mjs src/index.js",
+    "dev": "node ../scripts/run-node.mjs src/index.js",
+    "index": "node ../scripts/run-node.mjs src/crawl.js",
+    "test": "node ../scripts/run-node.mjs --test",
+    "refresh": "node ../scripts/run-node.mjs src/refresh.js",
+    "sql:status": "node ../scripts/run-node.mjs scripts/sql-status.mjs",
+    "sql:bootstrap": "node ../scripts/run-node.mjs scripts/bootstrap.mjs",
+    "auth:hash": "node ../scripts/run-node.mjs scripts/hash-password.mjs"
+  },
+  "dependencies": {
+    "axios": "^1.21.1",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "minisearch": "^7.1.0",
+    "pg": "^8.16.3"
+  },
+  "engines": {
+    "node": "^24.22.3"
+  }
+}

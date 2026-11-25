@@ -1,0 +1,5 @@
+export const RESPONSE_LABELS=Object.freeze({faq:'Автовідповідь',llm:'Мовна модель',extractive:'Цитати з джерел',verified_local:'Локальна відповідь за джерелами',multi_extract:'Складена локальна відповідь',no_context:'Немає підтверджених даних',navigation:'Посилання для перевірки',conversation:'Діалог',clarification:'Уточнення',schedule_mock:'Демонстраційний розклад',schedule_live:'Актуальний розклад',error:'Помилка',unknown:'Невідомий тип'});
+export const RESPONSE_TYPES=Object.freeze(Object.keys(RESPONSE_LABELS));
+export function isNoContext(chat){return chat.meta?.sourceType==='no_context'||(chat.meta?.sourceType==='llm'&&chat.meta?.hadContext===false);}
+export function isFallback(chat){const m=chat.meta||{};if(m.sourceType==='error')return false;if(m.fallbackReason!==undefined)return Boolean(m.fallbackReason);return ['extractive','verified_local','no_context'].includes(m.sourceType)||(m.sourceType==='multi_extract'&&m.fallback===true);}
+export function validSessionId(value){return typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)?value.toLowerCase():null;}
