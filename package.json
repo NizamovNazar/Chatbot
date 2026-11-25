@@ -1,0 +1,12 @@
+{
+  "name": "oa-smart-assistant",
+  "version": "22.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "build": "npm ci --prefix server && npm ci --prefix web && npm run build --prefix web",
+    "start": "npm start --prefix server"
+  }
+}
