@@ -9,9 +9,9 @@ export function createAiRouter(env = process.env, { fetchImpl = fetch, now = Dat
   const totalTimeoutMs = numberInRange(env.AI_TOTAL_TIMEOUT_MS, 35000, 10, 120000);
   const maxTokens = numberInRange(env.AI_MAX_TOKENS, 1200, 64, 8192);
   const definitions = [
-    { id: 'gemini', model: env.GEMINI_MODEL || 'gemini-4-hydrogen', key: env.GEMINI_API_KEY,
-      url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', extra: { reasoning_effort: 'low' } },
-    { id: 'openrouter', model: env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free', key: env.OPENROUTER_API_KEY,
+    { id: 'gemini', model: env.GEMINI_MODEL || 'google/gemini-4-hydrogen', key: env.OPENROUTER_API_KEY,
+      url: 'https://openrouter.ai/api/v1/chat/completions', extra: { reasoning: { effort: 'low' } } },
+    { id: 'openrouter', model: env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b', key: env.OPENROUTER_API_KEY,
       url: 'https://openrouter.ai/api/v1/chat/completions', extra: { reasoning: { enabled: false } } },
     { id: 'cloudflare', model: env.CLOUDFLARE_MODEL || '@cf/google/gemma-4-26b-a4b-it', key: env.CLOUDFLARE_API_TOKEN,
       url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID || '')}/ai/v1/chat/completions` },
@@ -21,7 +21,7 @@ export function createAiRouter(env = process.env, { fetchImpl = fetch, now = Dat
   const providers = [...new Set(order)].map(id => {
     const p = definitions.find(item => item.id === id);
     const missing = !p.key?.trim() || (id === 'cloudflare' && !env.CLOUDFLARE_ACCOUNT_ID?.trim());
-    return { ...p, configured: !missing, invalid: id === 'openrouter' && !p.model.endsWith(':free'), retryAt: 0, lastError: null };
+    return { ...p, configured: !missing, invalid: false, retryAt: 0, lastError: null };
   });
   let lastSuccess = null;
   const status = () => ({
